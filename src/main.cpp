@@ -44,11 +44,11 @@ int statusTerakhirSaklarKipas = HIGH;
 int statusStabilSaklarLampu = HIGH;
 int statusStabilSaklarKipas = HIGH;
 
-// Variabel Filter PIR
+// Variabel Filter PIR (TIDAK DIUBAH)
 int hitunganPIR = 0;
 const int ambangPIR = 50; 
-unsigned long waktuTerakhirGerakan = 0;       // BARU: Mencatat waktu gerakan/lambaian terakhir
-const unsigned long rentangTahanPIR = 4000;   // BARU: Menahan status selama 4 detik (4000 ms) agar lampu tidak intermiten
+unsigned long waktuTerakhirGerakan = 0;       
+const unsigned long rentangTahanPIR = 4000;   
 
 float suhu = 0.0;
 float kelembapan = 0.0;
@@ -63,6 +63,7 @@ bool statusManualLampu = false;
 bool statusManualKipas = false;
 bool statusTV = false;
 bool statusKunci = false;
+bool oledEnabled = true;                       // Status ON/OFF Layar (Dikendalikan tombol Smart TV baru)
 
 // ================= STORAGE UNTUK RIWAYAT GRAFIK =================
 float hSuhu[10] = {0}, hKelembapan[10] = {0};
@@ -80,7 +81,7 @@ void simpanDataGrafik() {
   hSuhu[9] = suhu;
   hKelembapan[9] = kelembapan;
   hPir[9] = statusGerak;
-  hTv[9] = statusTV ? 1 : 0;
+  hTv[9] = oledEnabled ? 1 : 0; // PERUBAHAN: Garis grafik TV sekarang membaca data status keaktifan Layar OLED
   hLampu[9] = (modeLampuAuto ? (statusGerak ? 1 : 0) : (statusManualLampu ? 1 : 0));
   hKipas[9] = digitalRead(RELAYPIN);
 }
@@ -207,7 +208,7 @@ const char* HALAMAN_WEB = R"rawliteral(
       <div class="dev3">
         <div class="devcard" id="dc-tv">
           <div class="devcard-ico" style="background:#dbeafe"><i class="ti ti-device-tv" style="color:#1d4ed8"></i></div>
-          <div class="devcard-name">Smart TV</div>
+          <div class="devcard-name">Smart TV (OLED)</div>
           <div class="devcard-status green" id="dc-tv-s">ON</div>
           <span class="sbadge bg" id="dc-tv-b">Menyala</span>
         </div>
@@ -241,10 +242,12 @@ const char* HALAMAN_WEB = R"rawliteral(
       <div class="ph"><div><div class="pt">Kontrol perangkat</div><div class="ps">Monitoring dan kontrol manual/otomatis</div></div></div>
       <div class="card">
         <div class="card-title"><i class="ti ti-plug"></i> Daftar perangkat</div>
+        
         <div class="dev-row" style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #eee;">
           <div><div class="dev-name">Smart TV</div><div class="dev-sub" id="p-tv-sub">Status: --</div></div>
           <button class="tgl on" id="p-tv" onclick="togDev(this)"></button>
         </div>
+        
         <div class="dev-row" style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #eee;">
           <div><div class="dev-name">Lampu</div><div class="dev-sub" id="p-lmp-sub">Status: --</div></div>
           <button class="tgl on" id="p-lmp" onclick="togDev(this)"></button>
@@ -307,7 +310,7 @@ function nav(page, el) {
 function togDev(btn) {
   btn.classList.toggle('on'); btn.classList.toggle('off');
   const state = btn.classList.contains('on') ? "on" : "off";
-  if (btn.id === "p-tv") fetch(`/tv/${state}`);
+  if (btn.id === "p-tv") fetch(`/oled/${state}`); // PERUBAHAN: Tombol p-tv sekarang mengirim request /oled/on atau /oled/off
   else if (btn.id === "p-lmp") fetch(`/lamp/${state}`);
   else if (btn.id === "p-fan") fetch(`/fan/${state}`);
   else if (btn.id === "p-lock") fetch(`/lock/${state}`);
@@ -337,12 +340,13 @@ function updatePIRVisual(pirActive, pirMaster) {
   }
 }
 
-function updateDeviceUI(tvStatus, lampStatus, fanStatus, lockStatus, lampAuto, tvAuto, fanAuto, pirMaster) {
-  document.getElementById('dc-tv-s').textContent = tvStatus ? 'ON' : 'OFF';
-  document.getElementById('dc-tv-b').textContent = tvStatus ? 'Menyala' : 'Mati';
-  document.getElementById('dc-tv-b').className = 'sbadge ' + (tvStatus ? 'bg' : 'br');
-  document.getElementById('p-tv').className = 'tgl ' + (tvStatus ? 'on' : 'off');
-  document.getElementById('p-tv-sub').textContent = `Status: ${tvStatus ? 'ON' : 'OFF'} · ${tvAuto ? 'Otomatis (PIR)' : 'Manual'}`;
+function updateDeviceUI(oledStatus, lampStatus, fanStatus, lockStatus, lampAuto, tvAuto, fanAuto, pirMaster) {
+  // PERUBAHAN: dc-tv (di dashboard) sekarang mengikuti status oledStatus (Layar OLED)
+  document.getElementById('dc-tv-s').textContent = oledStatus ? 'ON' : 'OFF';
+  document.getElementById('dc-tv-b').textContent = oledStatus ? 'Menyala' : 'Mati';
+  document.getElementById('dc-tv-b').className = 'sbadge ' + (oledStatus ? 'bg' : 'br');
+  document.getElementById('p-tv').className = 'tgl ' + (oledStatus ? 'on' : 'off');
+  document.getElementById('p-tv-sub').textContent = `Status: ${oledStatus ? 'ON' : 'OFF'} · ${tvAuto ? 'Otomatis (PIR)' : 'Manual'}`;
 
   document.getElementById('dc-lmp-s').textContent = lampStatus ? 'ON' : 'OFF';
   document.getElementById('dc-lmp-b').textContent = lampStatus ? 'Menyala' : 'Mati';
@@ -380,7 +384,8 @@ async function updateSensor() {
     if (document.getElementById('hum-v')) document.getElementById('hum-v').innerHTML = `${data.kelembapan} %`;
 
     updatePIRVisual(data.pir, data.pirMaster);
-    updateDeviceUI(data.tv, data.lampu, data.kipas, data.kunci, data.modeLampuAuto, data.modeTvAuto, data.modeKipasAuto, data.pirMaster);
+    // PERUBAHAN: parameter pertama mengoper data.oled ke fungsi updateDeviceUI
+    updateDeviceUI(data.oled, data.lampu, data.kipas, data.kunci, data.modeLampuAuto, data.modeTvAuto, data.modeKipasAuto, data.pirMaster);
 
     if (data.history) { updateChartData(data.history); updateMiniChart(data.history); }
   } catch(err) { console.log("Gagal mengambil data sensor:", err); }
@@ -391,7 +396,8 @@ let chartsInited = false, chartMulti, chartPir, chartSuhu, miniChart;
 function initCharts() {
   if (chartsInited) return; chartsInited = true;
   const labels = ['1','2','3','4','5','6','7','8','9','10'];
-  chartMulti = new Chart(document.getElementById('g-multi'), { type: 'line', data: { labels, datasets: [{ label: 'TV', data: [0,0,0,0,0,0,0,0,0,0], borderColor: '#3b82f6' }, { label: 'Lampu', data: [0,0,0,0,0,0,0,0,0,0], borderColor: '#facc15' }, { label: 'Kipas', data: [0,0,0,0,0,0,0,0,0,0], borderColor: '#22c55e' }] }, options: { responsive: true, maintainAspectRatio: false } });
+  // PERUBAHAN: Judul legend tetap 'TV' sesuai permintaan Anda, namun data yang masuk nantinya adalah data status Layar OLED
+  chartMulti = new Chart(document.getElementById('g-multi'), { type: 'line', data: { labels, datasets: [{ label: 'TV', borderColor: '#3b82f6' }, { label: 'Lampu', data: [0,0,0,0,0,0,0,0,0,0], borderColor: '#facc15' }, { label: 'Kipas', data: [0,0,0,0,0,0,0,0,0,0], borderColor: '#22c55e' }] }, options: { responsive: true, maintainAspectRatio: false } });
   chartPir = new Chart(document.getElementById('g-pir'), { type: 'bar', data: { labels, datasets: [{ label: 'Gerakan', data: [0,0,0,0,0,0,0,0,0,0], backgroundColor: '#8b5cf6' }] }, options: { responsive: true, maintainAspectRatio: false } });
   chartSuhu = new Chart(document.getElementById('g-suhu'), { type: 'line', data: { labels, datasets: [{ label: 'Suhu', data: [0,0,0,0,0,0,0,0,0,0], borderColor: '#f97316' }, { label: 'Kelembaban', data: [0,0,0,0,0,0,0,0,0,0], borderColor: '#3b82f6' }] }, options: { responsive: true, maintainAspectRatio: false } });
 }
@@ -417,19 +423,18 @@ void setupWebServer() {
 
   server.on("/sensor", []() {
     bool lampuSkorNyata = modeLampuAuto ? (statusGerak == HIGH) : statusManualLampu;
-    bool tvSkorNyata = modeTvAuto ? (statusGerak == HIGH) : statusTV;
     
     String json = "{";
     json += "\"suhu\":" + String(suhu, 1) + ",";
     json += "\"kelembapan\":" + String(kelembapan, 0) + ",";
     json += "\"pir\":" + String(statusGerak) + ",";
-    json += "\"tv\":" + String(tvSkorNyata ? "true" : "false") + ",";
     json += "\"lampu\":" + String(lampuSkorNyata ? "true" : "false") + ",";
     
     json += "\"modeLampuAuto\":" + String(modeLampuAuto ? "true" : "false") + ",";
     json += "\"modeTvAuto\":" + String(modeTvAuto ? "true" : "false") + ",";
     json += "\"modeKipasAuto\":" + String(modeKipasAuto ? "true" : "false") + ",";
     json += "\"pirMaster\":" + String(pirSensorEnabled ? "true" : "false") + ","; 
+    json += "\"oled\":" + String(oledEnabled ? "true" : "false") + ","; 
     
     json += "\"kipas\":" + String(digitalRead(RELAYPIN) ? "true" : "false") + ",";
     json += "\"kunci\":" + String(statusKunci ? "true" : "false") + ",";
@@ -438,7 +443,7 @@ void setupWebServer() {
     json += "\"suhu\":["; for(int i=0; i<10; i++) { json += String(hSuhu[i], 1) + (i==9 ? "" : ","); }
     json += "],\"kelembapan\":["; for(int i=0; i<10; i++) { json += String(hKelembapan[i], 0) + (i==9 ? "" : ","); }
     json += "],\"pir\":["; for(int i=0; i<10; i++) { json += String(hPir[i]) + (i==9 ? "" : ","); }
-    json += "],\"tv\":["; for(int i=0; i<10; i++) { json += String(hTv[i]) + (i==9 ? "" : ","); }
+    json += "],\"tv\":["; for(int i=0; i<10; i++) { json += String(hTv[i]) + (i==9 ? "" : ","); } // Riwayat TV diisi status oled dari simpanDataGrafik()
     json += "],\"lampu\":["; for(int i=0; i<10; i++) { json += String(hLampu[i]) + (i==9 ? "" : ","); }
     json += "],\"kipas\":["; for(int i=0; i<10; i++) { json += String(hKipas[i]) + (i==9 ? "" : ","); }
     json += "]}";
@@ -456,10 +461,8 @@ void setupWebServer() {
   server.on("/lamp/auto/on", []() { modeLampuAuto = true; tambahLog("Lampu: PIR AUTO ON"); server.send(200, "text/plain", "OK"); });
   server.on("/lamp/auto/off", []() { modeLampuAuto = false; tambahLog("Lampu: PIR AUTO OFF"); server.send(200, "text/plain", "OK"); });
 
-  server.on("/tv/on", []() { modeTvAuto = false; statusTV = true; tambahLog("TV: MANUAL ON"); server.send(200, "text/plain", "OK"); });
-  server.on("/tv/off", []() { modeTvAuto = false; statusTV = false; tambahLog("TV: MANUAL OFF"); server.send(200, "text/plain", "OK"); });
-  server.on("/tv/auto/on", []() { modeTvAuto = true; tambahLog("TV: PIR AUTO ON"); server.send(200, "text/plain", "OK"); });
-  server.on("/tv/auto/off", []() { modeTvAuto = false; tambahLog("TV: PIR AUTO OFF"); server.send(200, "text/plain", "OK"); });
+  server.on("/tv/auto/on", []() { modeTvAuto = true; tambahLog("Smart TV: AUTO ON"); server.send(200, "text/plain", "OK"); });
+  server.on("/tv/auto/off", []() { modeTvAuto = false; tambahLog("Smart TV: AUTO OFF"); server.send(200, "text/plain", "OK"); });
 
   server.on("/fan/on", []() { modeKipasAuto = false; statusManualKipas = true; tambahLog("Kipas: MANUAL ON"); server.send(200, "text/plain", "OK"); });
   server.on("/fan/off", []() { modeKipasAuto = false; statusManualKipas = false; tambahLog("Kipas: MANUAL OFF"); server.send(200, "text/plain", "OK"); });
@@ -468,6 +471,10 @@ void setupWebServer() {
 
   server.on("/lock/on", []() { statusKunci = true; tambahLog("Pintu: DIKUNCI"); server.send(200, "text/plain", "OK"); });
   server.on("/lock/off", []() { statusKunci = false; tambahLog("Pintu: DIBUKA"); server.send(200, "text/plain", "OK"); });
+
+  // PERUBAHAN: Endpoint oled sekarang dipetakan langsung dari tombol "Smart TV" di web halaman perangkat
+  server.on("/oled/on", []() { oledEnabled = true; display.ssd1306_command(SSD1306_DISPLAYON); tambahLog("Layar OLED: DIHIDUPKAN"); server.send(200, "text/plain", "OK"); });
+  server.on("/oled/off", []() { oledEnabled = false; display.ssd1306_command(SSD1306_DISPLAYOFF); tambahLog("Layar OLED: DIMATIKAN"); server.send(200, "text/plain", "OK"); });
 
   server.begin();
 }
@@ -496,7 +503,7 @@ void setup() {
   pinMode(RELAYPIN, OUTPUT);
   digitalWrite(RELAYPIN, LOW);
 
-  // Setup Relay Lampu (Pin 5) - Di-set LOW di awal agar berstatus MATI sesuai fisik relay
+  // Setup Relay Lampu (Pin 5)
   pinMode(LAMPUPIN, OUTPUT);
   digitalWrite(LAMPUPIN, LOW); 
 
@@ -595,13 +602,12 @@ void loop() {
     }
   }
 
-  // 4. PEMBACAAN SENSOR PIR (DIOPTIMALKAN UNTUK GERAKAN MINTA/LAMBAIAN)
+  // 4. PEMBACAAN SENSOR PIR (DIOPTIMALKAN UNTUK GERAKAN MINTA/LAMBAIAN - TIDAK DIUBAH)
   if (pirSensorEnabled) {
     int bacaPIR = digitalRead(PIRPIN);
     if (bacaPIR == HIGH) {
-      waktuTerakhirGerakan = waktuSekarang; // Selalu perbarui waktu gerakan/lambaian terbaru
+      waktuTerakhirGerakan = waktuSekarang; 
       
-      // Jika mendeteksi gerakan, langsung naikkan hitungan ke ambang batas secara cepat
       hitunganPIR += 5; 
       if (hitunganPIR > ambangPIR) {
         hitunganPIR = ambangPIR;
@@ -611,9 +617,7 @@ void loop() {
         }
       }
     } else {
-      // JIKA PIR LOW: Cek apakah waktu tenang sudah melewati rentangTahanPIR (4 detik)
       if (waktuSekarang - waktuTerakhirGerakan >= rentangTahanPIR) {
-        // Jika sudah melewati 4 detik tanpa gerakan baru, lakukan pemotongan instan (logika bawaan Anda)
         hitunganPIR -= 10; 
         if (hitunganPIR < 0) {
           hitunganPIR = 0;
@@ -623,32 +627,37 @@ void loop() {
           }
         }
       }
-      // Jika belum melewati rentangTahanPIR, hitunganPIR dikunci (tidak dikurangi), statusGerak tetap 1
     }
   } else {
     statusGerak = 0;
     hitunganPIR = 0;
   }
 
-  // 5. LOGIKA OUTPUT AKTUAL - LAMPU (Dibalik agar sinkron dengan Web & Relay)
+  // 5. LOGIKA OUTPUT AKTUAL - LAMPU
   bool lampuHarusNyala = modeLampuAuto ? (statusGerak == 1) : statusManualLampu;
   if (lampuHarusNyala) {
-    digitalWrite(LAMPUPIN, HIGH);  // HIGH = Relay Terkoneksi/Nyala sesuai tombol web ON
+    digitalWrite(LAMPUPIN, HIGH);  
   } else {
-    digitalWrite(LAMPUPIN, LOW);   // LOW = Relay Terputus/Mati sesuai tombol web OFF
+    digitalWrite(LAMPUPIN, LOW);   
   }
 
-  // 6. LOGIKA OUTPUT AKTUAL - KIPAS (PIN 17: ACTIVE HIGH RELAY)
+  // 6. LOGIKA OUTPUT AKTUAL - KIPAS
   bool kipasHarusNyala = modeKipasAuto ? (suhu >= ambangSuhuPanas) : statusManualKipas;
   if (kipasHarusNyala) {
-    digitalWrite(RELAYPIN, HIGH); // HIGH = Relay Nyala
+    digitalWrite(RELAYPIN, HIGH); 
   } else {
-    digitalWrite(RELAYPIN, LOW);  // LOW = Relay Mati
+    digitalWrite(RELAYPIN, LOW);  
   }
 
-  // 7. LOGIKA OTOMATISASI TV
+  // 7. LOGIKA OTOMATISASI LAYAR/TV LEWAT MODE PIR TV AUTO
   if (modeTvAuto) {
-    statusTV = (statusGerak == 1);
+    if (statusGerak == 1 && !oledEnabled) {
+      oledEnabled = true;
+      display.ssd1306_command(SSD1306_DISPLAYON);
+    } else if (statusGerak == 0 && oledEnabled) {
+      oledEnabled = false;
+      display.ssd1306_command(SSD1306_DISPLAYOFF);
+    }
   }
 
   // 8. LOG LOGIK GRAFIK (SETIAP 5 DETIK)
@@ -657,18 +666,20 @@ void loop() {
     simpanDataGrafik();
   }
 
-  // 9. REFRESH TAMPILAN OLED realtime
-  display.clearDisplay();
-  display.setTextSize(1);
-  display.setCursor(0, 0);
-  display.println("--- SMART ROOM ---");
-  display.print("Ip: "); display.print(WiFi.localIP()); display.println();
-  display.print("Suhu: "); display.print(suhu, 1); display.println(" C");
-  display.print("Hum : "); display.print(kelembapan, 0); display.println(" %");
-  display.print("PIR : "); display.println(statusGerak == 1 ? "GERAKAN" : "TIDAK ADA");
-  display.print("Lampu: "); display.println(lampuHarusNyala ? "HIDUP" : "MATI");
-  display.print("Kipas: "); display.println(kipasHarusNyala ? "HIDUP" : "MATI");
-  display.display();
+  // 9. REFRESH TAMPILAN OLED REALTIME (Hanya berjalan jika oledEnabled == true)
+  if (oledEnabled) {
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setCursor(0, 0);
+    display.println("--- SMART ROOM ---");
+    display.print("Ip: "); display.print(WiFi.localIP()); display.println();
+    display.print("Suhu: "); display.print(suhu, 1); display.println(" C");
+    display.print("Hum : "); display.print(kelembapan, 0); display.println(" %");
+    display.print("PIR : "); display.println(statusGerak == 1 ? "GERAKAN" : "TIDAK ADA");
+    display.print("Lampu: "); display.println(lampuHarusNyala ? "HIDUP" : "MATI");
+    display.print("Kipas: "); display.println(kipasHarusNyala ? "HIDUP" : "MATI");
+    display.display();
+  }
 
-  delay(20); // Kestabilan mikro prosesor
+  delay(20); 
 }
