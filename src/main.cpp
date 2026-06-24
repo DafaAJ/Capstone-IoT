@@ -47,6 +47,8 @@ int statusStabilSaklarKipas = HIGH;
 // Variabel Filter PIR
 int hitunganPIR = 0;
 const int ambangPIR = 50; 
+unsigned long waktuTerakhirGerakan = 0;       // BARU: Mencatat waktu gerakan/lambaian terakhir
+const unsigned long rentangTahanPIR = 4000;   // BARU: Menahan status selama 4 detik (4000 ms) agar lampu tidak intermiten
 
 float suhu = 0.0;
 float kelembapan = 0.0;
@@ -593,10 +595,12 @@ void loop() {
     }
   }
 
-  // 4. PEMBACAAN SENSOR PIR (DIOPTIMALKAN AGAR LEBIH RESPONS_IF)
+  // 4. PEMBACAAN SENSOR PIR (DIOPTIMALKAN UNTUK GERAKAN MINTA/LAMBAIAN)
   if (pirSensorEnabled) {
     int bacaPIR = digitalRead(PIRPIN);
     if (bacaPIR == HIGH) {
+      waktuTerakhirGerakan = waktuSekarang; // Selalu perbarui waktu gerakan/lambaian terbaru
+      
       // Jika mendeteksi gerakan, langsung naikkan hitungan ke ambang batas secara cepat
       hitunganPIR += 5; 
       if (hitunganPIR > ambangPIR) {
@@ -607,15 +611,19 @@ void loop() {
         }
       }
     } else {
-      // Jika sensor sudah bernilai LOW (sepi), langsung potong hitungan agar instan mati
-      hitunganPIR -= 10; 
-      if (hitunganPIR < 0) {
-        hitunganPIR = 0;
-        if (statusGerak == 1) {
-          statusGerak = 0;
-          tambahLog("Ruangan Sepi");
+      // JIKA PIR LOW: Cek apakah waktu tenang sudah melewati rentangTahanPIR (4 detik)
+      if (waktuSekarang - waktuTerakhirGerakan >= rentangTahanPIR) {
+        // Jika sudah melewati 4 detik tanpa gerakan baru, lakukan pemotongan instan (logika bawaan Anda)
+        hitunganPIR -= 10; 
+        if (hitunganPIR < 0) {
+          hitunganPIR = 0;
+          if (statusGerak == 1) {
+            statusGerak = 0;
+            tambahLog("Ruangan Sepi");
+          }
         }
       }
+      // Jika belum melewati rentangTahanPIR, hitunganPIR dikunci (tidak dikurangi), statusGerak tetap 1
     }
   } else {
     statusGerak = 0;
