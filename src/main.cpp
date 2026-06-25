@@ -7,8 +7,8 @@
 #include <WebServer.h>
 
 // ================= PENGATURAN WI-FI =================
-const char* ssid = "Galaxy A04e 49d1";        
-const char* password = "Kata sandi";  
+const char* ssid = ""; // Masukan nama hotspot Anda     
+const char* password = "";  // Masukan password hotspot Anda
 
 WebServer server(80);
 
